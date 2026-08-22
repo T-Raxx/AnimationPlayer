@@ -316,5 +316,95 @@ return function(A)
     end
     A.track(UIS.InputBegan:Connect(UI._handleKey))
 
+    -- ================= List (always open) =================
+    function UI.list(win, opts)
+        local rowH = opts.rowHeight or 20
+        local viewH = opts.height or 120
+        local box = win.add(viewH)
+        local items = {}
+        local selectedIdx = nil
+        local scroll = 0
+        local rowsVisible = math.floor(viewH / rowH)
+
+        local frame = newRect{ Color = Color3.fromRGB(22, 22, 28) }
+        local pool = {}
+        for i = 1, rowsVisible do
+            pool[i] = {
+                bg = newRect{ Color = Color3.fromRGB(35, 35, 42) },
+                tx = newText{ Text = "", Size = 14 },
+                del = newText{ Text = "X", Size = 14, Color = Color3.fromRGB(220, 90, 90) },
+            }
+        end
+
+        local lst = {}
+        function lst.setItems(arr) items = arr or {}; if selectedIdx and selectedIdx > #items then selectedIdx = nil end end
+        function lst.refresh() end
+        function lst.getSelected() return selectedIdx and items[selectedIdx] or nil end
+        function lst.clearSelection() selectedIdx = nil end
+
+        local wd = {}
+        function wd.draw(origin, vis)
+            frame.Position = origin + Vector2.new(box.x, box.y); frame.Size = Vector2.new(box.w, box.h); frame.Visible = vis
+            for i = 1, rowsVisible do
+                local itemIdx = i + scroll
+                local row = pool[i]
+                local it = items[itemIdx]
+                local ry = box.y + (i - 1) * rowH
+                if it and vis then
+                    row.bg.Position = origin + Vector2.new(box.x, ry)
+                    row.bg.Size = Vector2.new(box.w, rowH - 1)
+                    row.bg.Color = (itemIdx == selectedIdx) and Color3.fromRGB(70, 90, 140) or Color3.fromRGB(35, 35, 42)
+                    row.bg.Visible = true
+                    row.tx.Text = it.name
+                    row.tx.Position = origin + Vector2.new(box.x + 6, ry + 2); row.tx.Visible = true
+                    row.del.Position = origin + Vector2.new(box.x + box.w - 16, ry + 2); row.del.Visible = true
+                else
+                    row.bg.Visible = false; row.tx.Visible = false; row.del.Visible = false
+                end
+            end
+        end
+
+        local function rowAt(mx, my, origin)
+            if mx < origin.X + box.x or mx > origin.X + box.x + box.w then return nil end
+            if my < origin.Y + box.y or my > origin.Y + box.y + box.h then return nil end
+            local rel = my - (origin.Y + box.y)
+            local i = math.floor(rel / rowH) + 1
+            local itemIdx = i + scroll
+            if not items[itemIdx] then return nil end
+            local isDelete = mx >= origin.X + box.x + box.w - 18
+            return itemIdx, isDelete
+        end
+
+        local prevHook = UI._onDispatchClick
+        UI._onDispatchClick = function(mx, my)
+            if prevHook then prevHook(mx, my) end
+            if not win.visible then return end
+            local idx, isDel = rowAt(mx, my, win.pos)
+            if not idx then return end
+            if isDel then
+                if opts.onDelete then opts.onDelete(items[idx]) end
+            else
+                selectedIdx = idx
+                if opts.onSelect then opts.onSelect(items[idx]) end
+            end
+        end
+
+        A.track(A.Services.UserInputService.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseWheel and win.visible then
+                local m = A.Services.UserInputService:GetMouseLocation()
+                if m.X >= win.pos.X + box.x and m.X <= win.pos.X + box.x + box.w
+                    and m.Y >= win.pos.Y + box.y and m.Y <= win.pos.Y + box.y + box.h then
+                    scroll = math.clamp(scroll - input.Position.Z, 0, math.max(0, #items - rowsVisible))
+                end
+            end
+        end))
+
+        lst._debugSelect = function(i) selectedIdx = i; if opts.onSelect then opts.onSelect(items[i]) end end
+        lst._debugDelete = function(i) if opts.onDelete then opts.onDelete(items[i]) end end
+
+        win._widgets[#win._widgets + 1] = wd
+        return lst
+    end
+
     A.UI = UI
 end
