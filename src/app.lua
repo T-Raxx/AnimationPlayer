@@ -1,10 +1,17 @@
 return function(A)
     local App = {}
-    local win, list, nameInput, idInput, nowPlaying
+    local win, list, nameInput, idInput, nowPlaying, playBtn
+    local playing = false
 
     function App._refreshList()
         if list then list.setItems(A.Store.list()) end
     end
+
+    function App._setPlaying(on)
+        playing = on
+        if playBtn and playBtn.setAccent then playBtn.setAccent(on) end
+    end
+    function App.isPlaying() return playing end
 
     function App._addFromInputs(name, id)
         local ok, err = A.Store.add(name, id)
@@ -21,19 +28,25 @@ return function(A)
 
     function App._triggerPlay()
         local sel = (list and list.getSelected()) or A.State.selected
-        if not sel then A.notify("Select an animation first"); return end
+        if not sel then A.notify("Select an animation first"); return false end
         A.State.selected = sel
         local ok = A.Player.play(sel.id)
-        if ok and nowPlaying then nowPlaying.set(sel.name) end
+        if ok then
+            App._setPlaying(true)
+            if nowPlaying then nowPlaying.set(sel.name) end
+        end
+        return ok
     end
 
     function App._stop()
         A.Player.stop()
+        App._setPlaying(false)
         if nowPlaying then nowPlaying.clear() end
     end
 
-    function App._onPlayToggle(state)
-        if state then App._triggerPlay() else App._stop() end
+    -- keybind + Play button share this: toggle playback on/off instead of restarting
+    function App._togglePlay()
+        if playing then App._stop() else App._triggerPlay() end
     end
 
     function App.start()
@@ -61,10 +74,11 @@ return function(A)
         end, { accent = true })
 
         A.UI.section(win, "Playback")
-        A.UI.buttonRow(win, {
-            { label = "\u{25B6} Play", accent = true, flex = 0.5, cb = function() App._triggerPlay() end },
+        local transport = A.UI.buttonRow(win, {
+            { label = "\u{25B6} Play", accent = true, flex = 0.5, cb = function() App._togglePlay() end },
             { label = "\u{25A0} Stop", flex = 0.5, cb = function() App._stop() end },
         })
+        playBtn = transport[1]
         A.UI.toggle(win, "Loop", A.Config.looped, function(v) A.Player.setLooped(v) end)
         A.UI.slider(win, "Speed", 0.1, 3.0, A.Config.speed, function(v) A.Player.setSpeed(v) end)
 
@@ -78,7 +92,7 @@ return function(A)
         A.track(A.Services.UserInputService.InputBegan:Connect(function(input, gpe)
             if gpe then return end
             if input.KeyCode == A.Config.playKey then
-                App._triggerPlay()
+                App._togglePlay()
             elseif input.KeyCode == A.Config.menuKey then
                 win.toggle()
             end

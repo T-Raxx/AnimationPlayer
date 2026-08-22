@@ -109,6 +109,36 @@ return function(A)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
         end))
 
+        -- uniform scale + resize grip (drag bottom-right corner, like a window)
+        local uiScale = mk("UIScale", { Scale = 1 })
+        uiScale.Parent = card
+        win.scale = uiScale
+        local grip = mk("TextButton", {
+            Name = "Resize", AnchorPoint = Vector2.new(1, 1), Size = UDim2.fromOffset(18, 18),
+            Position = UDim2.new(1, -3, 1, -3), BackgroundTransparency = 1, AutoButtonColor = false,
+            Font = T.fontBody, Text = "\u{25E2}", TextSize = 13, TextColor3 = T.muted, ZIndex = 10,
+        })
+        grip.Parent = card
+        local resizing, rStartScale, rStart = false, 1, nil
+        A.track(grip.MouseEnter:Connect(function() grip.TextColor3 = T.accent end))
+        A.track(grip.MouseLeave:Connect(function() if not resizing then grip.TextColor3 = T.muted end end))
+        A.track(grip.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                resizing = true; rStart = input.Position; rStartScale = uiScale.Scale; grip.TextColor3 = T.accent
+            end
+        end))
+        A.track(UIS.InputChanged:Connect(function(input)
+            if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local d = input.Position - rStart
+                uiScale.Scale = math.clamp(rStartScale + (d.X + d.Y) / 500, 0.6, 2.2)
+            end
+        end))
+        A.track(UIS.InputEnded:Connect(function(input)
+            if resizing and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+                resizing = false; grip.TextColor3 = T.muted
+            end
+        end))
+
         return win
     end
 

@@ -111,6 +111,36 @@ return function(A)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
         end))
 
+        -- uniform scale + resize grip (drag bottom-right corner, like a window)
+        local uiScale = mk("UIScale", { Scale = 1 })
+        uiScale.Parent = card
+        win.scale = uiScale
+        local grip = mk("TextButton", {
+            Name = "Resize", AnchorPoint = Vector2.new(1, 1), Size = UDim2.fromOffset(18, 18),
+            Position = UDim2.new(1, -3, 1, -3), BackgroundTransparency = 1, AutoButtonColor = false,
+            Font = T.fontBody, Text = "\u{25E2}", TextSize = 13, TextColor3 = T.muted, ZIndex = 10,
+        })
+        grip.Parent = card
+        local resizing, rStartScale, rStart = false, 1, nil
+        A.track(grip.MouseEnter:Connect(function() grip.TextColor3 = T.accent end))
+        A.track(grip.MouseLeave:Connect(function() if not resizing then grip.TextColor3 = T.muted end end))
+        A.track(grip.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                resizing = true; rStart = input.Position; rStartScale = uiScale.Scale; grip.TextColor3 = T.accent
+            end
+        end))
+        A.track(UIS.InputChanged:Connect(function(input)
+            if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local d = input.Position - rStart
+                uiScale.Scale = math.clamp(rStartScale + (d.X + d.Y) / 500, 0.6, 2.2)
+            end
+        end))
+        A.track(UIS.InputEnded:Connect(function(input)
+            if resizing and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+                resizing = false; grip.TextColor3 = T.muted
+            end
+        end))
+
         return win
     end
 
@@ -525,11 +555,18 @@ end)()
 local __APP = (function()
 return function(A)
     local App = {}
-    local win, list, nameInput, idInput, nowPlaying
+    local win, list, nameInput, idInput, nowPlaying, playBtn
+    local playing = false
 
     function App._refreshList()
         if list then list.setItems(A.Store.list()) end
     end
+
+    function App._setPlaying(on)
+        playing = on
+        if playBtn and playBtn.setAccent then playBtn.setAccent(on) end
+    end
+    function App.isPlaying() return playing end
 
     function App._addFromInputs(name, id)
         local ok, err = A.Store.add(name, id)
@@ -546,19 +583,25 @@ return function(A)
 
     function App._triggerPlay()
         local sel = (list and list.getSelected()) or A.State.selected
-        if not sel then A.notify("Select an animation first"); return end
+        if not sel then A.notify("Select an animation first"); return false end
         A.State.selected = sel
         local ok = A.Player.play(sel.id)
-        if ok and nowPlaying then nowPlaying.set(sel.name) end
+        if ok then
+            App._setPlaying(true)
+            if nowPlaying then nowPlaying.set(sel.name) end
+        end
+        return ok
     end
 
     function App._stop()
         A.Player.stop()
+        App._setPlaying(false)
         if nowPlaying then nowPlaying.clear() end
     end
 
-    function App._onPlayToggle(state)
-        if state then App._triggerPlay() else App._stop() end
+    -- keybind + Play button share this: toggle playback on/off instead of restarting
+    function App._togglePlay()
+        if playing then App._stop() else App._triggerPlay() end
     end
 
     function App.start()
@@ -586,10 +629,11 @@ return function(A)
         end, { accent = true })
 
         A.UI.section(win, "Playback")
-        A.UI.buttonRow(win, {
-            { label = "\u{25B6} Play", accent = true, flex = 0.5, cb = function() App._triggerPlay() end },
+        local transport = A.UI.buttonRow(win, {
+            { label = "\u{25B6} Play", accent = true, flex = 0.5, cb = function() App._togglePlay() end },
             { label = "\u{25A0} Stop", flex = 0.5, cb = function() App._stop() end },
         })
+        playBtn = transport[1]
         A.UI.toggle(win, "Loop", A.Config.looped, function(v) A.Player.setLooped(v) end)
         A.UI.slider(win, "Speed", 0.1, 3.0, A.Config.speed, function(v) A.Player.setSpeed(v) end)
 
@@ -603,7 +647,7 @@ return function(A)
         A.track(A.Services.UserInputService.InputBegan:Connect(function(input, gpe)
             if gpe then return end
             if input.KeyCode == A.Config.playKey then
-                App._triggerPlay()
+                App._togglePlay()
             elseif input.KeyCode == A.Config.menuKey then
                 win.toggle()
             end
