@@ -45,6 +45,28 @@ return function(A)
         return s
     end
 
+    local UI_FILE = "AnimationPlayer/ui.json"
+    local function loadUISize()
+        if not A.Config.hasPersistence then return nil end
+        if not A.fs.isfile(UI_FILE) then return nil end
+        local raw = A.fs.read(UI_FILE)
+        local t = raw and A.json.decode(raw)
+        if type(t) == "table" and tonumber(t.w) and tonumber(t.h) then return tonumber(t.w), tonumber(t.h) end
+        return nil
+    end
+    local function saveUISize(w, h)
+        if not A.Config.hasPersistence then return end
+        A.fs.makefolder("AnimationPlayer")
+        A.fs.write(UI_FILE, A.json.encode({ w = math.floor(w), h = math.floor(h) }))
+    end
+    local function flexFill(inst)
+        pcall(function()
+            local f = Instance.new("UIFlexItem")
+            f.FlexMode = Enum.UIFlexMode.Fill
+            f.Parent = inst
+        end)
+    end
+
     local UI = {}
 
     -- hover lerp helper for buttons
@@ -55,36 +77,44 @@ return function(A)
 
     -- ===================== window =====================
     function UI.window(title)
+        local MINW, MAXW, MINH, MAXH = 250, 560, 380, 820
+        local sw, sh = loadUISize()
+        local W = math.clamp(sw or 300, MINW, MAXW)
+        local H = math.clamp(sh or 560, MINH, MAXH)
+
         local gui = mk("ScreenGui", { Name = randName(), ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 999999, IgnoreGuiInset = true })
         gui.Parent = guiParent()
         A.trackInst(gui)
         A._screenGui = gui
 
         local card = mk("Frame", {
-            Name = "Card", Size = UDim2.fromOffset(WIDTH, 0), AutomaticSize = Enum.AutomaticSize.Y,
-            Position = UDim2.fromOffset(80, 90), BackgroundColor3 = T.panel, BorderSizePixel = 0,
-        }, { corner(12), strokeOf(T.stroke, 1, 0.25), vlist(0) })
+            Name = "Card", Size = UDim2.fromOffset(W, H), Position = UDim2.fromOffset(80, 90),
+            BackgroundColor3 = T.panel, BorderSizePixel = 0, ClipsDescendants = true,
+        }, { corner(12), strokeOf(T.stroke, 1, 0.25) })
         card.Parent = gui
+
+        -- stack holds the laid-out rows; keeps the resize grip OUT of the list layout
+        local stack = mk("Frame", { Name = "Stack", Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1 }, { vlist(0) })
+        stack.Parent = card
 
         -- header (drag handle)
         local header = mk("Frame", { Name = "Header", Size = UDim2.new(1, 0, 0, 44), BackgroundColor3 = T.bg, BorderSizePixel = 0, LayoutOrder = 0 }, { corner(12) })
         mk("Frame", { Size = UDim2.new(1, 0, 0, 12), Position = UDim2.new(0, 0, 1, -12), BackgroundColor3 = T.bg, BorderSizePixel = 0 }).Parent = header -- square off bottom corners
-        local titleLbl = mk("TextLabel", {
+        mk("TextLabel", {
             BackgroundTransparency = 1, Size = UDim2.new(1, -60, 1, 0), Position = UDim2.fromOffset(PAD, 0),
-            Font = T.fontDisplay, Text = string.upper(title), TextSize = 14, TextColor3 = T.text,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
-        titleLbl.Parent = header
+            Font = T.fontDisplay, Text = string.upper(title), TextSize = 14, TextColor3 = T.text, TextXAlignment = Enum.TextXAlignment.Left,
+        }).Parent = header
         local closeBtn = mk("TextButton", {
             Size = UDim2.fromOffset(24, 24), Position = UDim2.new(1, -32, 0.5, -12), BackgroundColor3 = T.elevated,
             Font = T.fontBody, Text = "\u{2715}", TextSize = 13, TextColor3 = T.muted, AutoButtonColor = false,
         }, { corner(6) })
         closeBtn.Parent = header
-        header.Parent = card
+        header.Parent = stack
 
-        -- content container
-        local content = mk("Frame", { Name = "Content", Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = 2 }, { padAll(PAD), vlist(8) })
-        content.Parent = card
+        -- content fills the remaining height (flex); its own list layout stacks the widgets
+        local content = mk("Frame", { Name = "Content", Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, LayoutOrder = 2, ClipsDescendants = true }, { padAll(PAD), vlist(8) })
+        flexFill(content)
+        content.Parent = stack
 
         local win = { gui = gui, card = card, header = header, content = content, _order = 0, visible = true }
         function win.next() win._order = win._order + 1; return win._order end
@@ -92,50 +122,44 @@ return function(A)
         function win.toggle() win.setVisible(not win.visible) end
         A.track(closeBtn.MouseButton1Click:Connect(function() win.setVisible(false) end))
 
-        -- drag
+        -- bottom-right resize grip (real width/height, persisted)
+        local grip = mk("TextButton", {
+            Name = "Resize", AnchorPoint = Vector2.new(1, 1), Size = UDim2.fromOffset(20, 20),
+            Position = UDim2.new(1, -2, 1, -2), BackgroundTransparency = 1, AutoButtonColor = false,
+            Font = T.fontBody, Text = "\u{25E2}", TextSize = 14, TextColor3 = T.muted, ZIndex = 20,
+        })
+        grip.Parent = card
+        A.track(grip.MouseEnter:Connect(function() grip.TextColor3 = T.accent end))
+
+        -- drag (header) + resize (grip) share the pointer stream
         local dragging, dragStart, startPos = false, nil, nil
+        local resizing, rStart, rStartW, rStartH = false, nil, W, H
         A.track(header.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 dragging = true; dragStart = input.Position; startPos = card.Position
             end
         end))
-        A.track(UIS.InputChanged:Connect(function(input)
-            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-                local d = input.Position - dragStart
-                card.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
-            end
-        end))
-        A.track(UIS.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
-        end))
-
-        -- uniform scale + resize grip (drag bottom-right corner, like a window)
-        local uiScale = mk("UIScale", { Scale = 1 })
-        uiScale.Parent = card
-        win.scale = uiScale
-        local grip = mk("TextButton", {
-            Name = "Resize", AnchorPoint = Vector2.new(1, 1), Size = UDim2.fromOffset(18, 18),
-            Position = UDim2.new(1, -3, 1, -3), BackgroundTransparency = 1, AutoButtonColor = false,
-            Font = T.fontBody, Text = "\u{25E2}", TextSize = 13, TextColor3 = T.muted, ZIndex = 10,
-        })
-        grip.Parent = card
-        local resizing, rStartScale, rStart = false, 1, nil
-        A.track(grip.MouseEnter:Connect(function() grip.TextColor3 = T.accent end))
-        A.track(grip.MouseLeave:Connect(function() if not resizing then grip.TextColor3 = T.muted end end))
         A.track(grip.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                resizing = true; rStart = input.Position; rStartScale = uiScale.Scale; grip.TextColor3 = T.accent
+                resizing = true; rStart = input.Position; rStartW = card.Size.X.Offset; rStartH = card.Size.Y.Offset; grip.TextColor3 = T.accent
             end
         end))
         A.track(UIS.InputChanged:Connect(function(input)
-            if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            if dragging then
+                local d = input.Position - dragStart
+                card.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+            elseif resizing then
                 local d = input.Position - rStart
-                uiScale.Scale = math.clamp(rStartScale + (d.X + d.Y) / 500, 0.6, 2.2)
+                card.Size = UDim2.fromOffset(math.clamp(rStartW + d.X, MINW, MAXW), math.clamp(rStartH + d.Y, MINH, MAXH))
             end
         end))
         A.track(UIS.InputEnded:Connect(function(input)
-            if resizing and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            dragging = false
+            if resizing then
                 resizing = false; grip.TextColor3 = T.muted
+                saveUISize(card.Size.X.Offset, card.Size.Y.Offset)
             end
         end))
 
@@ -155,8 +179,8 @@ return function(A)
 
     -- ===================== now playing (signature) =====================
     function UI.nowPlaying(win)
-        local bar = mk("Frame", { Name = "NowPlaying", Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = T.bg, BorderSizePixel = 0, LayoutOrder = 1, Visible = false }, { padAll(6) })
-        bar.Parent = win.card
+        local bar = mk("Frame", { Name = "NowPlaying", Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = T.bg, BorderSizePixel = 0, LayoutOrder = win.next(), Visible = false }, { corner(6), padAll(6) })
+        bar.Parent = win.content
         local eqHolder = mk("Frame", { Size = UDim2.fromOffset(70, 14), Position = UDim2.new(0, PAD, 0.5, -7), BackgroundTransparency = 1 })
         eqHolder.Parent = bar
         local eqLayout = mk("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 3), VerticalAlignment = Enum.VerticalAlignment.Center })
@@ -343,6 +367,7 @@ return function(A)
             ScrollBarThickness = 4, ScrollBarImageColor3 = T.stroke, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
             ScrollingDirection = Enum.ScrollingDirection.Y,
         }, { corner(8), padAll(6), vlist(4) })
+        flexFill(container) -- list grows/shrinks as the window is resized taller/shorter
         container.Parent = win.content
         local emptyLbl = mk("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, viewH - 12), Font = T.fontBody, Text = "no animations yet \u{2014} add one below", TextSize = 12, TextColor3 = T.muted, TextWrapped = true })
         emptyLbl.Parent = container
