@@ -70,4 +70,6 @@ getgenv().__ANIMPLAYER_CLEANUP = function()
     if A.Player and A.Player.stop then pcall(A.Player.stop) end
 end
 
+getgenv().__ANIMPLAYER = A  -- debug/scripting handle
+
 A.App.start()
