@@ -6,7 +6,7 @@ end
 
 local A = {}
 A._connections = {}
-A._drawings = {}
+A._instances = {}
 
 A.Services = {
     Players = game:GetService("Players"),
@@ -58,15 +58,15 @@ end
 A.State = { selected = nil }
 
 A.track = function(conn) table.insert(A._connections, conn); return conn end
-A.trackDraw = function(d) table.insert(A._drawings, d); return d end
+A.trackInst = function(inst) table.insert(A._instances, inst); return inst end
 
--- module load order: drawing -> store -> player -> app (drawing sets A.notify first)
-local MODULES = { __DRAWING, __STORE, __PLAYER, __APP }
+-- module load order: gui -> store -> player -> app (gui sets A.notify first)
+local MODULES = { __GUI, __STORE, __PLAYER, __APP }
 for _, m in ipairs(MODULES) do m(A) end
 
 getgenv().__ANIMPLAYER_CLEANUP = function()
     for _, c in ipairs(A._connections) do pcall(function() c:Disconnect() end) end
-    for _, d in ipairs(A._drawings) do pcall(function() d:Remove() end) end
+    for _, i in ipairs(A._instances) do pcall(function() i:Destroy() end) end
     if A.Player and A.Player.stop then pcall(A.Player.stop) end
 end
 
