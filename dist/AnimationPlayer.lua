@@ -710,10 +710,16 @@ return function(A)
         local plr = Players.LocalPlayer
         local char = plr and plr.Character
         local animate = char and char:FindFirstChild("Animate")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
         if not (animate and char) then return end
         local clone = animate:Clone()
         clone.Disabled = false
         animate:Destroy()
+        -- stop lingering tracks from the old Animate so nothing stacks across reloads
+        local animator = hum and hum:FindFirstChildOfClass("Animator")
+        if animator then
+            for _, t in ipairs(animator:GetPlayingAnimationTracks()) do pcall(function() t:Stop(0) end) end
+        end
         clone.Parent = char
     end
 
