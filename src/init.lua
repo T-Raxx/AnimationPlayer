@@ -60,8 +60,8 @@ A.State = { selected = nil }
 A.track = function(conn) table.insert(A._connections, conn); return conn end
 A.trackInst = function(inst) table.insert(A._instances, inst); return inst end
 
--- module load order: gui -> store -> player -> app (gui sets A.notify first)
-local MODULES = { __GUI, __STORE, __PLAYER, __APP }
+-- module load order: gui -> store -> player -> packs -> app (gui sets A.notify first)
+local MODULES = { __GUI, __STORE, __PLAYER, __PACKS, __APP }
 for _, m in ipairs(MODULES) do m(A) end
 
 getgenv().__ANIMPLAYER_CLEANUP = function()

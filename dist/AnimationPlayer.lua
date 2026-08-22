@@ -430,6 +430,91 @@ return function(A)
         end
     end
 
+    -- ===================== label =====================
+    function UI.label(page, text)
+        local lbl = mk("TextLabel", {
+            BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 18), LayoutOrder = page.next(),
+            Font = T.fontBody, Text = text or "", TextSize = 12, TextColor3 = T.text, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+        })
+        lbl.Parent = page.content
+        local h = {}
+        function h.set(t) lbl.Text = tostring(t or "") end
+        return h
+    end
+
+    -- ===================== tabs (chrome-style) =====================
+    function UI.tabs(win, names)
+        local bar = mk("Frame", { Name = "Tabs", Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = T.bg, BorderSizePixel = 0, LayoutOrder = win.next() }, { corner(8) })
+        mk("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Left }).Parent = bar
+        mk("UIPadding", { PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4), PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4) }).Parent = bar
+        bar.Parent = win.content
+
+        local host = mk("Frame", { Name = "Pages", Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, LayoutOrder = win.next() })
+        flexFill(host)
+        host.Parent = win.content
+
+        local pages, tabBtns = {}, {}
+        local n = #names
+        local function activate(idx)
+            for i, p in ipairs(pages) do p.frame.Visible = (i == idx) end
+            for i, b in ipairs(tabBtns) do
+                b.BackgroundColor3 = (i == idx) and T.elevated or T.bg
+                b.TextColor3 = (i == idx) and T.accent or T.muted
+                b:FindFirstChild("Underline").Visible = (i == idx)
+            end
+        end
+        for i, name in ipairs(names) do
+            local btn = mk("TextButton", {
+                Size = UDim2.new(1 / n, -3, 1, 0), BackgroundColor3 = T.bg, AutoButtonColor = false,
+                Font = T.fontBody, Text = name, TextSize = 12, TextColor3 = T.muted, LayoutOrder = i,
+            }, { corner(6) })
+            mk("Frame", { Name = "Underline", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -1), Size = UDim2.new(1, -18, 0, 2), BackgroundColor3 = T.accent, BorderSizePixel = 0, Visible = false }, { corner(1) }).Parent = btn
+            btn.Parent = bar
+            tabBtns[i] = btn
+
+            local frame = mk("Frame", { Name = "Page_" .. i, Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false, ClipsDescendants = true }, { vlist(8) })
+            frame.Parent = host
+            local page = { frame = frame, content = frame, card = win.card, _order = 0 }
+            function page.next() page._order = page._order + 1; return page._order end
+            pages[i] = page
+            A.track(btn.MouseButton1Click:Connect(function() activate(i) end))
+        end
+        activate(1)
+        return pages
+    end
+
+    -- ===================== chips (wrapping multi-select) =====================
+    function UI.chips(page, items)
+        local frame = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = page.next() })
+        local lay = mk("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder })
+        pcall(function() lay.Wraps = true end)
+        lay.Parent = frame
+        frame.Parent = page.content
+        local sel, chips = {}, {}
+        local h = { onChange = nil }
+        local function refresh(key)
+            local c = chips[key]
+            c.BackgroundColor3 = sel[key] and T.accent or T.elevated
+            c.TextColor3 = sel[key] and T.bg or T.text
+        end
+        for i, it in ipairs(items) do
+            local btn = mk("TextButton", {
+                Size = UDim2.new(0, 0, 0, 26), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = T.elevated,
+                AutoButtonColor = false, Font = T.fontBody, Text = it.label, TextSize = 12, TextColor3 = T.text, LayoutOrder = i,
+            }, { corner(13) })
+            mk("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) }).Parent = btn
+            btn.Parent = frame
+            chips[it.key] = btn
+            A.track(btn.MouseButton1Click:Connect(function() sel[it.key] = not sel[it.key]; refresh(it.key); if h.onChange then h.onChange() end end))
+            refresh(it.key)
+        end
+        function h.getSelected() local out = {} for k, v in pairs(sel) do if v then out[#out + 1] = k end end return out end
+        function h.isSelected(k) return sel[k] == true end
+        function h.setAll(v) for k in pairs(chips) do sel[k] = v; refresh(k) end if h.onChange then h.onChange() end end
+        function h.set(k, v) if chips[k] then sel[k] = v; refresh(k) end end
+        return h
+    end
+
     A.UI = UI
 end
 
@@ -577,12 +662,186 @@ return function(A)
 end
 
 end)()
+local __PACKS = (function()
+-- Animation packs: resolve a catalog bundle to per-type animation ids and apply
+-- them by overwriting the character's Animate script, then reloading it.
+return function(A)
+    local HttpService = A.Services.HttpService
+    local Players = A.Services.Players
+    local Packs = {}
+
+    -- ordered animation types the UI exposes
+    Packs.TYPES = { "Idle", "Walk", "Run", "Jump", "Fall", "Climb", "Swim" }
+
+    -- type -> Animate folder/child targets to overwrite
+    local MAP = {
+        Idle = { { "idle", "Animation1" }, { "idle", "Animation2" } },
+        Walk = { { "walk", "WalkAnim" } },
+        Run = { { "run", "RunAnim" } },
+        Jump = { { "jump", "JumpAnim" } },
+        Fall = { { "fall", "FallAnim" } },
+        Climb = { { "climb", "ClimbAnim" } },
+        Swim = { { "swim", "Swim" }, { "swimidle", "SwimIdle" } },
+    }
+
+    local orig = nil       -- snapshot of the char's original AnimationIds {"folder.child"=id}
+    local activeSel = nil  -- last applied {Type=id} so we can re-apply after respawn
+
+    local function getAnimate()
+        local plr = Players.LocalPlayer
+        local char = plr and plr.Character
+        return char and char:FindFirstChild("Animate")
+    end
+
+    local function snapshot(animate)
+        if orig then return end
+        orig = {}
+        for _, folder in ipairs(animate:GetChildren()) do
+            for _, a in ipairs(folder:GetChildren()) do
+                if a:IsA("Animation") then orig[folder.Name .. "." .. a.Name] = a.AnimationId end
+            end
+        end
+    end
+
+    local function reload(animate)
+        pcall(function()
+            animate.Disabled = true
+            task.wait(0.12)
+            animate.Disabled = false
+        end)
+    end
+
+    -- fetch bundle details -> { id, name, types = { Idle=assetId, Walk=assetId, ... } }
+    function Packs.fetch(idOrUrl)
+        local s = tostring(idOrUrl or "")
+        local id = s:match("bundles/(%d+)") or s:match("(%d+)")
+        if not id then return nil, "no bundle id" end
+        local ok, res = pcall(function()
+            return game:HttpGet("https://catalog.roblox.com/v1/bundles/" .. id .. "/details")
+        end)
+        if not ok then return nil, "network error" end
+        local okj, data = pcall(function() return HttpService:JSONDecode(res) end)
+        if not okj or type(data) ~= "table" then return nil, "bad response" end
+        local types = {}
+        for _, it in ipairs(data.items or {}) do
+            if it.type == "Asset" and it.name then
+                for _, tp in ipairs(Packs.TYPES) do
+                    if string.find(string.lower(it.name), string.lower(tp), 1, true) then types[tp] = it.id end
+                end
+            end
+        end
+        if not next(types) then return nil, "no animation items in bundle" end
+        return { id = id, name = data.name or ("Bundle " .. id), types = types }
+    end
+
+    -- apply a subset. sel = { Type = assetId, ... }
+    function Packs.apply(sel)
+        local animate = getAnimate()
+        if not animate then A.notify("No Animate script on character"); return false end
+        snapshot(animate)
+        local applied = 0
+        for tp, id in pairs(sel) do
+            local targets = MAP[tp]
+            if targets then
+                for _, t in ipairs(targets) do
+                    local f = animate:FindFirstChild(t[1])
+                    local a = f and f:FindFirstChild(t[2])
+                    if a then a.AnimationId = "rbxassetid://" .. tostring(id); applied = applied + 1 end
+                end
+            end
+        end
+        reload(animate)
+        activeSel = sel
+        return applied > 0
+    end
+
+    function Packs.reset()
+        local animate = getAnimate()
+        if not animate or not orig then return false end
+        for key, id in pairs(orig) do
+            local folder, child = key:match("([^.]+)%.(.+)")
+            local f = folder and animate:FindFirstChild(folder)
+            local a = f and f:FindFirstChild(child)
+            if a then a.AnimationId = id end
+        end
+        reload(animate)
+        activeSel = nil
+        return true
+    end
+
+    function Packs.isActive() return activeSel ~= nil end
+
+    -- re-apply after respawn (fresh char = fresh defaults, so drop the old snapshot)
+    local plr = Players.LocalPlayer
+    if plr and plr.CharacterAdded then
+        A.track(plr.CharacterAdded:Connect(function()
+            if activeSel then
+                task.wait(1)
+                orig = nil
+                Packs.apply(activeSel)
+            end
+        end))
+    end
+
+    -- persistence of saved packs (name + bundle id)
+    local PATH = "AnimationPlayer/packs.json"
+    local saved = {}
+    local function persist()
+        if not A.Config.hasPersistence then return end
+        A.fs.makefolder("AnimationPlayer")
+        A.fs.write(PATH, A.json.encode(saved))
+    end
+    local function load()
+        if A.Config.hasPersistence and A.fs.isfile(PATH) then
+            local raw = A.fs.read(PATH)
+            local t = raw and A.json.decode(raw)
+            if type(t) == "table" then
+                saved = {}
+                for _, r in ipairs(t) do
+                    if type(r) == "table" and r.name and r.id then
+                        saved[#saved + 1] = { name = tostring(r.name), id = tostring(r.id) }
+                    end
+                end
+            end
+        end
+    end
+
+    function Packs.list() return saved end
+    function Packs.get(name) for _, r in ipairs(saved) do if r.name == name then return r end end return nil end
+    function Packs.save(name, idOrUrl)
+        name = name and (tostring(name):gsub("^%s+", ""):gsub("%s+$", "")) or ""
+        local id = tostring(idOrUrl or ""):match("bundles/(%d+)") or tostring(idOrUrl or ""):match("(%d+)") or ""
+        if name == "" then return false, "name required" end
+        if id == "" then return false, "bundle id required" end
+        if Packs.get(name) then return false, "name already exists" end
+        saved[#saved + 1] = { name = name, id = id }
+        persist()
+        return true
+    end
+    function Packs.remove(name)
+        for i, r in ipairs(saved) do
+            if r.name == name then table.remove(saved, i); persist(); return true end
+        end
+        return false
+    end
+
+    load()
+    A.Packs = Packs
+end
+
+end)()
 local __APP = (function()
 return function(A)
     local App = {}
-    local win, list, nameInput, idInput, nowPlaying, playBtn
+    local win, nowPlaying, playBtn
+    -- Anims tab
+    local list, nameInput, idInput
     local playing = false
+    -- Anim packs tab
+    local packUrlInput, packNameLbl, packChips, packList, packSaveName
+    local currentPack = nil
 
+    -- ============ Anims: single-animation player ============
     function App._refreshList()
         if list then list.setItems(A.Store.list()) end
     end
@@ -624,19 +883,57 @@ return function(A)
         if nowPlaying then nowPlaying.clear() end
     end
 
-    -- keybind + Play button share this: toggle playback on/off instead of restarting
     function App._togglePlay()
         if playing then App._stop() else App._triggerPlay() end
     end
 
-    function App.start()
-        win = A.UI.window("Animation Player")
-        A.App._win = win
-        nowPlaying = A.UI.nowPlaying(win)
+    -- ============ Anim packs ============
+    local function typeCount(pack)
+        local n = 0
+        for _ in pairs(pack.types) do n = n + 1 end
+        return n
+    end
 
-        A.UI.section(win, "Library")
-        list = A.UI.list(win, {
-            height = 150, rowHeight = 34,
+    function App._loadPack(urlOrId)
+        local pack, err = A.Packs.fetch(urlOrId)
+        if not pack then A.notify(err or "Could not load bundle"); return false end
+        currentPack = pack
+        if packNameLbl then packNameLbl.set(pack.name .. "  \u{2022} " .. typeCount(pack) .. " types") end
+        A.notify("Loaded '" .. pack.name .. "'")
+        return true
+    end
+
+    function App._applyPack()
+        if not currentPack then A.notify("Load a bundle first"); return end
+        local chosen = packChips.getSelected()
+        if #chosen == 0 then A.notify("Pick at least one animation type"); return end
+        local sel = {}
+        for _, tp in ipairs(chosen) do
+            if currentPack.types[tp] then sel[tp] = currentPack.types[tp] end
+        end
+        if not next(sel) then A.notify("This pack has none of the picked types"); return end
+        if A.Packs.apply(sel) then A.notify("Applied " .. currentPack.name) end
+    end
+
+    function App._refreshPackList()
+        if packList then packList.setItems(A.Packs.list()) end
+    end
+
+    function App._savePack(name, urlOrId)
+        local ok, err = A.Packs.save(name, urlOrId)
+        if ok then
+            if packSaveName then packSaveName.clear() end
+            App._refreshPackList()
+            A.notify("Saved pack '" .. name .. "'")
+        else
+            A.notify(err or "Could not save pack")
+        end
+    end
+
+    local function buildAnimsPage(page)
+        A.UI.section(page, "Library")
+        list = A.UI.list(page, {
+            height = 130, rowHeight = 34,
             onSelect = function(it) A.State.selected = it end,
             onDelete = function(it)
                 A.Store.remove(it.name)
@@ -645,29 +942,67 @@ return function(A)
                 A.notify("Deleted '" .. it.name .. "'")
             end,
         })
+        A.UI.section(page, "Add animation")
+        nameInput = A.UI.textInput(page, "name")
+        idInput = A.UI.textInput(page, "animation / asset id", true)
+        A.UI.button(page, "+ Save to library", function() App._addFromInputs(nameInput.get(), idInput.get()) end, { accent = true })
 
-        A.UI.section(win, "Add animation")
-        nameInput = A.UI.textInput(win, "name")
-        idInput = A.UI.textInput(win, "animation / asset id", true)
-        A.UI.button(win, "+ Save to library", function()
-            App._addFromInputs(nameInput.get(), idInput.get())
-        end, { accent = true })
-
-        A.UI.section(win, "Playback")
-        local transport = A.UI.buttonRow(win, {
+        A.UI.section(page, "Playback")
+        local transport = A.UI.buttonRow(page, {
             { label = "\u{25B6} Play", accent = true, flex = 0.5, cb = function() App._togglePlay() end },
             { label = "\u{25A0} Stop", flex = 0.5, cb = function() App._stop() end },
         })
         playBtn = transport[1]
-        A.UI.toggle(win, "Loop", A.Config.looped, function(v) A.Player.setLooped(v) end)
-        A.UI.slider(win, "Speed", 0.1, 3.0, A.Config.speed, function(v) A.Player.setSpeed(v) end)
+        A.UI.toggle(page, "Loop", A.Config.looped, function(v) A.Player.setLooped(v) end)
+        A.UI.slider(page, "Speed", 0.1, 3.0, A.Config.speed, function(v) A.Player.setSpeed(v) end)
 
-        A.UI.section(win, "Keys")
-        A.UI.keybind(win, "Play key", A.Config.playKey, function(k) A.Config.playKey = k end)
-        A.UI.keybind(win, "Menu key", A.Config.menuKey, function(k) A.Config.menuKey = k end)
+        A.UI.section(page, "Keys")
+        A.UI.keybind(page, "Play key", A.Config.playKey, function(k) A.Config.playKey = k end)
+        A.UI.keybind(page, "Menu key", A.Config.menuKey, function(k) A.Config.menuKey = k end)
+    end
+
+    local function buildPacksPage(page)
+        A.UI.section(page, "Load a bundle")
+        packUrlInput = A.UI.textInput(page, "bundle url or id", true)
+        A.UI.button(page, "Load pack", function() App._loadPack(packUrlInput.get()) end, { accent = true })
+        packNameLbl = A.UI.label(page, "no pack loaded")
+
+        A.UI.section(page, "Apply which animations")
+        local items = {}
+        for _, tp in ipairs(A.Packs.TYPES) do items[#items + 1] = { key = tp, label = tp } end
+        packChips = A.UI.chips(page, items)
+        A.UI.buttonRow(page, {
+            { label = "Full pack", flex = 0.5, cb = function() packChips.setAll(true) end },
+            { label = "Clear", flex = 0.5, cb = function() packChips.setAll(false) end },
+        })
+        A.UI.buttonRow(page, {
+            { label = "Apply", accent = true, flex = 0.5, cb = function() App._applyPack() end },
+            { label = "Reset", flex = 0.5, cb = function() A.Packs.reset(); A.notify("Reset to default animations") end },
+        })
+
+        A.UI.section(page, "Saved packs")
+        packList = A.UI.list(page, {
+            height = 100, rowHeight = 30,
+            onSelect = function(it) packUrlInput.set(it.id); App._loadPack(it.id) end,
+            onDelete = function(it) A.Packs.remove(it.name); App._refreshPackList(); A.notify("Removed '" .. it.name .. "'") end,
+        })
+        A.UI.section(page, "Save current")
+        packSaveName = A.UI.textInput(page, "pack name")
+        A.UI.button(page, "+ Save pack", function() App._savePack(packSaveName.get(), packUrlInput.get()) end)
+    end
+
+    function App.start()
+        win = A.UI.window("Animation Player")
+        A.App._win = win
+        nowPlaying = A.UI.nowPlaying(win)
+
+        local pages = A.UI.tabs(win, { "Anims", "Anim packs" })
+        buildAnimsPage(pages[1])
+        buildPacksPage(pages[2])
 
         if not A.Config.hasPersistence then A.notify("No filesystem: library won't persist") end
         App._refreshList()
+        App._refreshPackList()
 
         A.track(A.Services.UserInputService.InputBegan:Connect(function(input, gpe)
             if gpe then return end
@@ -745,8 +1080,8 @@ A.State = { selected = nil }
 A.track = function(conn) table.insert(A._connections, conn); return conn end
 A.trackInst = function(inst) table.insert(A._instances, inst); return inst end
 
--- module load order: gui -> store -> player -> app (gui sets A.notify first)
-local MODULES = { __GUI, __STORE, __PLAYER, __APP }
+-- module load order: gui -> store -> player -> packs -> app (gui sets A.notify first)
+local MODULES = { __GUI, __STORE, __PLAYER, __PACKS, __APP }
 for _, m in ipairs(MODULES) do m(A) end
 
 getgenv().__ANIMPLAYER_CLEANUP = function()

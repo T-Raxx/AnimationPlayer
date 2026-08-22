@@ -428,5 +428,90 @@ return function(A)
         end
     end
 
+    -- ===================== label =====================
+    function UI.label(page, text)
+        local lbl = mk("TextLabel", {
+            BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 18), LayoutOrder = page.next(),
+            Font = T.fontBody, Text = text or "", TextSize = 12, TextColor3 = T.text, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+        })
+        lbl.Parent = page.content
+        local h = {}
+        function h.set(t) lbl.Text = tostring(t or "") end
+        return h
+    end
+
+    -- ===================== tabs (chrome-style) =====================
+    function UI.tabs(win, names)
+        local bar = mk("Frame", { Name = "Tabs", Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = T.bg, BorderSizePixel = 0, LayoutOrder = win.next() }, { corner(8) })
+        mk("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Left }).Parent = bar
+        mk("UIPadding", { PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4), PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4) }).Parent = bar
+        bar.Parent = win.content
+
+        local host = mk("Frame", { Name = "Pages", Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, LayoutOrder = win.next() })
+        flexFill(host)
+        host.Parent = win.content
+
+        local pages, tabBtns = {}, {}
+        local n = #names
+        local function activate(idx)
+            for i, p in ipairs(pages) do p.frame.Visible = (i == idx) end
+            for i, b in ipairs(tabBtns) do
+                b.BackgroundColor3 = (i == idx) and T.elevated or T.bg
+                b.TextColor3 = (i == idx) and T.accent or T.muted
+                b:FindFirstChild("Underline").Visible = (i == idx)
+            end
+        end
+        for i, name in ipairs(names) do
+            local btn = mk("TextButton", {
+                Size = UDim2.new(1 / n, -3, 1, 0), BackgroundColor3 = T.bg, AutoButtonColor = false,
+                Font = T.fontBody, Text = name, TextSize = 12, TextColor3 = T.muted, LayoutOrder = i,
+            }, { corner(6) })
+            mk("Frame", { Name = "Underline", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -1), Size = UDim2.new(1, -18, 0, 2), BackgroundColor3 = T.accent, BorderSizePixel = 0, Visible = false }, { corner(1) }).Parent = btn
+            btn.Parent = bar
+            tabBtns[i] = btn
+
+            local frame = mk("Frame", { Name = "Page_" .. i, Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false, ClipsDescendants = true }, { vlist(8) })
+            frame.Parent = host
+            local page = { frame = frame, content = frame, card = win.card, _order = 0 }
+            function page.next() page._order = page._order + 1; return page._order end
+            pages[i] = page
+            A.track(btn.MouseButton1Click:Connect(function() activate(i) end))
+        end
+        activate(1)
+        return pages
+    end
+
+    -- ===================== chips (wrapping multi-select) =====================
+    function UI.chips(page, items)
+        local frame = mk("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = page.next() })
+        local lay = mk("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder })
+        pcall(function() lay.Wraps = true end)
+        lay.Parent = frame
+        frame.Parent = page.content
+        local sel, chips = {}, {}
+        local h = { onChange = nil }
+        local function refresh(key)
+            local c = chips[key]
+            c.BackgroundColor3 = sel[key] and T.accent or T.elevated
+            c.TextColor3 = sel[key] and T.bg or T.text
+        end
+        for i, it in ipairs(items) do
+            local btn = mk("TextButton", {
+                Size = UDim2.new(0, 0, 0, 26), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = T.elevated,
+                AutoButtonColor = false, Font = T.fontBody, Text = it.label, TextSize = 12, TextColor3 = T.text, LayoutOrder = i,
+            }, { corner(13) })
+            mk("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) }).Parent = btn
+            btn.Parent = frame
+            chips[it.key] = btn
+            A.track(btn.MouseButton1Click:Connect(function() sel[it.key] = not sel[it.key]; refresh(it.key); if h.onChange then h.onChange() end end))
+            refresh(it.key)
+        end
+        function h.getSelected() local out = {} for k, v in pairs(sel) do if v then out[#out + 1] = k end end return out end
+        function h.isSelected(k) return sel[k] == true end
+        function h.setAll(v) for k in pairs(chips) do sel[k] = v; refresh(k) end if h.onChange then h.onChange() end end
+        function h.set(k, v) if chips[k] then sel[k] = v; refresh(k) end end
+        return h
+    end
+
     A.UI = UI
 end

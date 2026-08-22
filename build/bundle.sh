@@ -18,6 +18,7 @@ emit() { # $1 = local name, $2 = src path
     emit __GUI     src/ui/gui.lua
     emit __STORE   src/core/store.lua
     emit __PLAYER  src/core/player.lua
+    emit __PACKS   src/core/packs.lua
     emit __APP     src/app.lua
     cat src/init.lua
 } > "$OUT"
