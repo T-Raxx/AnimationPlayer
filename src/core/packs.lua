@@ -38,12 +38,18 @@ return function(A)
         end
     end
 
-    local function reload(animate)
-        pcall(function()
-            animate.Disabled = true
-            task.wait(0.12)
-            animate.Disabled = false
-        end)
+    -- Reliable reload: clone the (already-edited) Animate script and swap it in so it
+    -- re-runs from scratch with the new AnimationIds. Toggling Disabled does NOT restart
+    -- an already-run LocalScript on many clients (leaves the character stiff).
+    local function reload()
+        local plr = Players.LocalPlayer
+        local char = plr and plr.Character
+        local animate = char and char:FindFirstChild("Animate")
+        if not (animate and char) then return end
+        local clone = animate:Clone()
+        clone.Disabled = false
+        animate:Destroy()
+        clone.Parent = char
     end
 
     -- fetch bundle details -> { id, name, types = { Idle=assetId, Walk=assetId, ... } }
@@ -85,7 +91,7 @@ return function(A)
                 end
             end
         end
-        reload(animate)
+        reload()
         activeSel = sel
         return applied > 0
     end
@@ -99,7 +105,7 @@ return function(A)
             local a = f and f:FindFirstChild(child)
             if a then a.AnimationId = id end
         end
-        reload(animate)
+        reload()
         activeSel = nil
         return true
     end
