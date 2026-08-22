@@ -21,6 +21,17 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/T-Raxx/AnimationPlaye
 - **Stop** ends playback; each row's **X** deletes it
 - Library persists to `AnimationPlayer/saved.json`
 
+## Anim packs
+
+Second tab (**Anim packs**). Paste a bundle url or id (e.g.
+`https://www.roblox.com/es/bundles/80/Zombie-Animation-Pack` or `80`) and
+click **Load pack**. Pick which animation types to swap with the chips
+(Idle / Walk / Run / Jump / Fall / Climb / Swim) — **Full pack** selects all,
+multi-select is free — then **Apply**. **Reset** restores your defaults.
+Save packs by name to the list (persists to `AnimationPlayer/packs.json`).
+
+Applied packs re-apply automatically after you respawn.
+
 ## How it plays catalog animations
 
 Resolves a catalog asset id to its real `AnimationId` via
