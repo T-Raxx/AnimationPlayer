@@ -664,7 +664,8 @@ end
 end)()
 local __PACKS = (function()
 -- Animation packs: resolve a catalog bundle to per-type animation ids and apply
--- them by overwriting the character's Animate script, then reloading it.
+-- them by overwriting the AnimationIds in the character's Animate script (which
+-- auto-reloads each pose via its own .Changed handlers -- no restart needed).
 return function(A)
     local HttpService = A.Services.HttpService
     local Players = A.Services.Players
@@ -703,25 +704,10 @@ return function(A)
         end
     end
 
-    -- Reliable reload: clone the (already-edited) Animate script and swap it in so it
-    -- re-runs from scratch with the new AnimationIds. Toggling Disabled does NOT restart
-    -- an already-run LocalScript on many clients (leaves the character stiff).
-    local function reload()
-        local plr = Players.LocalPlayer
-        local char = plr and plr.Character
-        local animate = char and char:FindFirstChild("Animate")
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if not (animate and char) then return end
-        local clone = animate:Clone()
-        clone.Disabled = false
-        animate:Destroy()
-        -- stop lingering tracks from the old Animate so nothing stacks across reloads
-        local animator = hum and hum:FindFirstChildOfClass("Animator")
-        if animator then
-            for _, t in ipairs(animator:GetPlayingAnimationTracks()) do pcall(function() t:Stop(0) end) end
-        end
-        clone.Parent = char
-    end
+    -- No reload hack needed: the default Animate LocalScript connects each pose
+    -- Animation's .Changed event to configureAnimationSet, so setting a new
+    -- AnimationId auto-rebuilds and replays that pose live. Toggling Disabled,
+    -- cloning, or stopping tracks all just leave the character stiff/T-posed.
 
     -- fetch bundle details -> { id, name, types = { Idle=assetId, Walk=assetId, ... } }
     function Packs.fetch(idOrUrl)
@@ -762,7 +748,6 @@ return function(A)
                 end
             end
         end
-        reload()
         activeSel = sel
         return applied > 0
     end
@@ -776,7 +761,6 @@ return function(A)
             local a = f and f:FindFirstChild(child)
             if a then a.AnimationId = id end
         end
-        reload()
         activeSel = nil
         return true
     end
