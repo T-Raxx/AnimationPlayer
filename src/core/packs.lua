@@ -67,6 +67,34 @@ return function(A)
         return { id = id, name = data.name or ("Bundle " .. id), types = types }
     end
 
+    -- Bundle item ids are catalog wrappers (GetObjects returns a Folder holding the
+    -- real Animation), not playable ids -- setting them raw yields "AnimationClip not
+    -- valid". Resolve each to the inner Animation's real AnimationId. Cached.
+    local resolveCache = {}
+    local function resolveAnimId(catalogId)
+        local key = tostring(catalogId)
+        if resolveCache[key] then return resolveCache[key] end
+        local ok, res = pcall(function() return game:GetObjects("rbxassetid://" .. key) end)
+        if ok and res then
+            for _, root in ipairs(res) do
+                local found = nil
+                local isAnim = select(2, pcall(function() return root:IsA("Animation") end))
+                if isAnim then
+                    found = root
+                else
+                    for _, d in ipairs(root:GetDescendants()) do
+                        if d:IsA("Animation") then found = d; break end
+                    end
+                end
+                if found and found.AnimationId ~= "" then
+                    resolveCache[key] = found.AnimationId
+                    return found.AnimationId
+                end
+            end
+        end
+        return "rbxassetid://" .. key -- fallback: raw id
+    end
+
     -- apply a subset. sel = { Type = assetId, ... }
     function Packs.apply(sel)
         local animate = getAnimate()
@@ -79,7 +107,7 @@ return function(A)
                 for _, t in ipairs(targets) do
                     local f = animate:FindFirstChild(t[1])
                     local a = f and f:FindFirstChild(t[2])
-                    if a then a.AnimationId = "rbxassetid://" .. tostring(id); applied = applied + 1 end
+                    if a then a.AnimationId = resolveAnimId(id); applied = applied + 1 end
                 end
             end
         end
