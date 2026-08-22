@@ -7,10 +7,10 @@ instances), keybind + toggle playback, loop + speed control.
 ## Load
 
 ```lua
-loadstring(readfile("AnimationPlayer/dist/AnimationPlayer.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/T-Raxx/AnimationPlayer/main/dist/AnimationPlayer.lua"))()
 ```
 
-(or host `dist/AnimationPlayer.lua` and `loadstring(game:HttpGet(url))()`)
+(or, if the file is in your executor workspace: `loadstring(readfile("AnimationPlayer/dist/AnimationPlayer.lua"))()`)
 
 ## Use
 
@@ -35,7 +35,7 @@ emote/bundle asset ids and raw animation ids.
 src/
   core/player.lua   playback engine (resolve + play/stop/loop/speed)
   core/store.lua    JSON library persistence
-  ui/drawing.lua    minimal Drawing-API widget lib
+  ui/gui.lua        instance UI (gethui, Spotlight theme, real TextBox)
   app.lua           wires UI + core
   init.lua          entry: cleanup guard, builds shared table A
 build/bundle.sh     inlines src -> dist/AnimationPlayer.lua
