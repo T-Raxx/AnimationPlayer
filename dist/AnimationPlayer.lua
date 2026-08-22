@@ -26,6 +26,7 @@ return function(A)
 
     local function mk(cls, props, kids)
         local o = Instance.new(cls)
+        pcall(function() o.AutoLocalize = false end) -- stop games' LocalizationTable from translating our labels
         for k, v in pairs(props or {}) do o[k] = v end
         for _, c in ipairs(kids or {}) do c.Parent = o end
         return o
