@@ -215,5 +215,106 @@ return function(A)
         end
     end))
 
+    -- ================= TextInput =================
+    UI._inputs = {}
+    UI._activeInput = nil
+    function UI.textInput(win, placeholder)
+        local box = win.add(ROWH)
+        local bg = newRect{ Color = Color3.fromRGB(25, 25, 32) }
+        local tx = newText{ Text = "", Size = 14 }
+        local value = ""
+        local inp = { _box = box, _placeholder = placeholder }
+        function inp.get() return value end
+        function inp.set(s) value = tostring(s or "") end
+        function inp.clear() value = "" end
+        local wd = {}
+        function wd.draw(origin, vis)
+            bg.Position = origin + Vector2.new(box.x, box.y); bg.Size = Vector2.new(box.w, box.h); bg.Visible = vis
+            local shown
+            if value == "" and UI._activeInput ~= inp then
+                shown = placeholder; tx.Color = Color3.fromRGB(120, 120, 130)
+            else
+                tx.Color = Color3.fromRGB(235, 235, 235)
+                shown = value
+                if UI._activeInput == inp and (tick() % 1) < 0.5 then shown = shown .. "|" end
+            end
+            tx.Text = shown
+            tx.Position = origin + Vector2.new(box.x + 5, box.y + 3); tx.Visible = vis
+        end
+        function wd.hitbox(mx, my, origin, vis)
+            if not vis then return false end
+            local px, py = origin.X + box.x, origin.Y + box.y
+            return mx >= px and mx <= px + box.w and my >= py and my <= py + box.h
+        end
+        inp._wd = wd
+        win._widgets[#win._widgets + 1] = wd
+        UI._inputs[#UI._inputs + 1] = { inp = inp, win = win }
+        return inp
+    end
+
+    -- ================= Keybind =================
+    UI._captureKeybind = nil
+    function UI.keybind(win, label, initial, cb)
+        local box = win.add(ROWH)
+        local bg = newRect{ Color = Color3.fromRGB(45, 45, 55) }
+        local tx = newText{ Text = "" }
+        local key = initial
+        local kb = {}
+        function kb.get() return key end
+        function kb.set(k) key = k; if cb then cb(k) end end
+        local wd = {}
+        local function keyName() return UI._captureKeybind == kb and "..." or (key and key.Name or "None") end
+        function wd.draw(origin, vis)
+            bg.Position = origin + Vector2.new(box.x, box.y); bg.Size = Vector2.new(box.w, box.h); bg.Visible = vis
+            tx.Text = label .. ": [" .. keyName() .. "]"
+            tx.Position = origin + Vector2.new(box.x + 6, box.y + 3); tx.Visible = vis
+        end
+        function wd.hit(mx, my, origin, vis)
+            if not vis then return false end
+            local px, py = origin.X + box.x, origin.Y + box.y
+            return mx >= px and mx <= px + box.w and my >= py and my <= py + box.h
+        end
+        function wd.click() UI._captureKeybind = kb end
+        win._widgets[#win._widgets + 1] = wd
+        UI._widgets[#UI._widgets + 1] = { wd = wd, win = win }
+        return kb
+    end
+
+    -- focus dispatch (called from core InputBegan click handler)
+    UI._dispatchClick = function(mx, my)
+        local hitOne = nil
+        for _, e in ipairs(UI._inputs) do
+            if e.inp._wd.hitbox(mx, my, e.win.pos, e.win.visible) then hitOne = e.inp end
+        end
+        UI._activeInput = hitOne
+        if UI._onDispatchClick then UI._onDispatchClick(mx, my) end
+    end
+
+    -- typing + keybind capture (extracted so it can be unit-tested)
+    function UI._handleKey(input)
+        local kc = input.KeyCode
+        if UI._captureKeybind and input.UserInputType == Enum.UserInputType.Keyboard
+            and kc ~= Enum.KeyCode.Unknown then
+            local target = UI._captureKeybind; UI._captureKeybind = nil
+            target.set(kc)
+            return
+        end
+        if not UI._activeInput then return end
+        if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        local inp = UI._activeInput
+        if kc == Enum.KeyCode.Backspace then
+            inp.set(inp.get():sub(1, -2)); return
+        elseif kc == Enum.KeyCode.Return or kc == Enum.KeyCode.Escape then
+            UI._activeInput = nil; return
+        end
+        local ok, s = pcall(function() return UIS:GetStringForKeyCode(kc) end)
+        if ok and s and s ~= "" then
+            local shift = UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift)
+            if shift then s = s:upper() end
+            inp.set(inp.get() .. s)
+        end
+    end
+    A.track(UIS.InputBegan:Connect(UI._handleKey))
+
     A.UI = UI
 end
