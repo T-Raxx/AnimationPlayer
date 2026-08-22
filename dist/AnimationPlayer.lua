@@ -57,6 +57,7 @@ return function(A)
     -- ===================== window =====================
     function UI.window(title)
         local gui = mk("ScreenGui", { Name = randName(), ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 999999, IgnoreGuiInset = true })
+        gui.Parent = guiParent()
         A.trackInst(gui)
         A._screenGui = gui
 
@@ -351,6 +352,7 @@ return function(A)
     -- ===================== notify =====================
     do
         local sg = mk("ScreenGui", { Name = randName(), ResetOnSpawn = false, DisplayOrder = 1000000, IgnoreGuiInset = true })
+        sg.Parent = guiParent()
         A.trackInst(sg)
         local toast = mk("Frame", { Size = UDim2.fromOffset(240, 34), Position = UDim2.new(0.5, -120, 0, -50), BackgroundColor3 = T.bg, BorderSizePixel = 0, Visible = false }, { corner(8), strokeOf(T.accent, 1, 0.3) })
         local msg = mk("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(8, 0), Font = T.fontBody, Text = "", TextSize = 12, TextColor3 = T.text, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd })
